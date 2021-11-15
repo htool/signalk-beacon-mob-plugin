@@ -1,0 +1,30 @@
+{
+  "name": "signalk-beacon-mob-plugin",
+  "version": "0.0.1",
+  "description": "Use BLE beacons to track crew and raise MOB alert (PGN) when a beacon goes out of range",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/htool/signalk-beacon-mob-plugin.git"
+  },
+  "author": "hans@defect.org",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/htool/signalk-beacon-mob-plugin/issues"
+  },
+  "homepage": "https://github.com/htool/signalk-beacon-mob-plugin#readme",
+  "keywords": [
+    "signalk-node-server-plugin",
+    "signalk-category-nmea2000",
+    "signalk-category-chart-plotters",
+    "signalk-category-hardware"
+  ],
+  "dependencies": {
+    "baconjs": "^3.0.17",
+    "chipolo": "0.0.0",
+    "lodash": "^4.17.21"
+  }
+}
