@@ -23,6 +23,8 @@
     "signalk-category-hardware"
   ],
   "dependencies": {
+    "@abandonware/bluetooth-hci-socket": "^0.5.3-8",
+    "@abandonware/noble": "^1.9.2-15",
     "baconjs": "^3.0.17",
     "chipolo": "0.0.0",
     "lodash": "^4.17.21"

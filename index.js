@@ -1,4 +1,5 @@
 const util = require('util')
+const noble = require('@abandonware/noble');
 const _ = require('lodash')
 var sourceAddress = '1'
 var globalOptions = []
@@ -18,7 +19,6 @@ module.exports = function (app) {
     app.debug('Plugin started');
 
     mmsi = app.getSelfPath('mmsi')
-    app.debug('mmsi: %d', mmsi)
 
     globalOptions = options;
 
@@ -49,6 +49,25 @@ module.exports = function (app) {
     }, 5000))
   };
 
+	
+	noble.on('stateChange', async (state) => {
+	  if (state === 'poweredOn') {
+      app.debug('noble poweredOn');
+	    await noble.startScanningAsync(['180f'], false);
+	  }
+	});
+	noble.on('discover', async (peripheral) => {
+    app.debug('noble discover');
+	  await noble.stopScanningAsync();
+	  await peripheral.connectAsync();
+	  const {characteristics} = await peripheral.discoverSomeServicesAndCharacteristicsAsync(['180f'], ['2a19']);
+	  const batteryLevel = (await characteristics[0].readAsync())[0];
+	
+	  app.debug(`${peripheral.address} (${peripheral.advertisement.localName}): ${batteryLevel}%`);
+	
+	  await peripheral.disconnectAsync();
+    process.exit(0);
+  });
 
 
   plugin.stop = function () {
@@ -80,30 +99,26 @@ function sendMOBpgn () {
        false,
        ",0=MOB Emitter Activated,1=Manual on-board MOB Button Activation,2=Test Mode,3=MOB Not Active",
        ""},
-      {"Reserved", 5, RES_BINARY, false, 0, ""},
+      {"Reserved1", 5, RES_BINARY, false, 0, ""},
       {"Activation Time", BYTES(4), RES_TIME, false, "s", "Time of day (UTC) when MOB was activated"},
       {"Position Source", 3, RES_LOOKUP, false, ",0=Position estimated by the Vessel,1=Position reported by MOB emitter", ""},
-      {"Reserved", 5, RES_BINARY, false, 0, ""},
+      {"Reserved2", 5, RES_BINARY, false, 0, ""},
       {"Position Date", BYTES(2), RES_DATE, false, "", "Date of MOB position"},
       {"Position Time", BYTES(4), RES_TIME, false, "s", "Time of day of MOB position (UTC)"},
       {"Latitude", BYTES(4), RES_LATITUDE, true, "deg", ""},
       {"Longitude", BYTES(4), RES_LONGITUDE, true, "deg", ""},
       {"COG Reference", 2, RES_LOOKUP, false, LOOKUP_DIRECTION_REFERENCE, ""},
-      {"Reserved", 6, RES_BINARY, false, 0, ""},
+      {"Reserved3", 6, RES_BINARY, false, 0, ""},
       {"COG", BYTES(2), RES_RADIANS, false, "rad", ""},
       {"SOG", BYTES(2), 0.01, false, "m/s", ""},
       {"MMSI of vessel of origin", BYTES(4), RES_INTEGER, false, "MMSI", ""},
       {"MOB Emitter Battery Status", 3, RES_LOOKUP, false, ",0=Good,1=Low", ""},
-      {"Reserved", 5, RES_BINARY, false, 0, ""},
+      {"Reserved4", 5, RES_BINARY, false, 0, ""},
       {0}}}
 */
 
       const datetime = new Date(app.getSelfPath('navigation.datetime.value'))
-      app.debug('Date: %s', datetime)
-      app.debug('Seconds: %d', secToday(datetime))
-
       const myPos = app.getSelfPath('navigation.position.value')
-      app.debug('my pos %j', myPos)
 
       const commandPgn = {
         "pgn":127233,
@@ -111,22 +126,23 @@ function sendMOBpgn () {
         "prio":3,
         "fields":{
           "SID": 0,
-          "MOB Emitter ID": 1234567,
+          "MOB Emitter ID": 0,
           "Man Overboard Status": 2,
-          "Reserved": 0,
-          "Activation Time": secToday(datetime),
+          "Reserved1": 31,
+          "Activation Time": secToday(datetime)-5,
           "Position Source": 0,
+          "Reserved2": 63,
           "Position Date": daysToday(datetime),
           "Position Time": secToday(datetime),
-          "Latitude": myPos.latitude,
-          "Longitude": myPos.longitude,
+          "Latitude": myPos.latitude + 0.0001,
+          "Longitude": myPos.longitude - 0.0001,
           "COG Reference": 0,
-          "Reserved": 0,
+          "Reserved3": 127,
           "COG": 0,
           "SOG": 0,
-          "MMSI of vessel of origin": mmsi,
+          "MMSI of vessel of origin": 244130146,
           "MOB Emitter Battery Status": 0,
-          "Reserved": 0
+          "Reserved4": 63
         }
       }
 
@@ -160,8 +176,8 @@ function sendMOBpgn () {
       },
     }
   };
-  return plugin;
 
+  return plugin;
 };
 
 function padd(n, p, c)
