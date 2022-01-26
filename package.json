@@ -25,8 +25,12 @@
   "dependencies": {
     "@abandonware/bluetooth-hci-socket": "^0.5.3-8",
     "@abandonware/noble": "^1.9.2-15",
+    "@ansgomez/node-beacon-scanner": "^0.2.5",
+    "async": "^3.2.2",
     "baconjs": "^3.0.17",
-    "chipolo": "0.0.0",
-    "lodash": "^4.17.21"
+    "bleno": "^0.5.0",
+    "chipolo": "^0.0.0",
+    "lodash": "^4.17.21",
+    "node-beacon-scanner": "^0.2.2"
   }
 }

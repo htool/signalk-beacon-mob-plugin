@@ -1,9 +1,12 @@
 const util = require('util')
 const noble = require('@abandonware/noble');
 const _ = require('lodash')
+var Chipolo = require('chipolo');
+
 var sourceAddress = '1'
 var globalOptions = []
-var mmsi;
+var alert = 0
+var MOBsent = false
 
 module.exports = function (app) {
   var plugin = {}
@@ -12,16 +15,16 @@ module.exports = function (app) {
 
   plugin.id = 'signalk-beacon-mob-plugin';
   plugin.name = 'BLE beacon MOB plugin';
-  plugin.description = 'Use BLE beacons to track crew and raise MOB alert (PGN) when a beacon goes out of range';
+  plugin.description = 'Use BLE beacons to track crew and raise AIS MOB alert (PGN) when a beacon goes out of range';
 
   plugin.start = function (options, restartPlugin) {
     // Here we put our plugin logic
     app.debug('Plugin started');
+    var currentGPS
+    var mmsi = randomMMSI()
 
-    mmsi = app.getSelfPath('mmsi')
-
-    globalOptions = options;
-
+    app.debug('MMSI: %d  MOBsent: %s', mmsi, MOBsent);
+    globalOptions = options
 
     let localSubscription = {
       context: '*', // Get data for all contexts
@@ -45,30 +48,56 @@ module.exports = function (app) {
     );
 
     timers.push(setTimeout(() => {
-      sendMOBpgn(); 
-    }, 5000))
+      alert = 1; 
+    }, 10000))
+    timers.push(setTimeout(() => {
+      alert = 1; 
+    }, 60000))
+    
+    timers.push(setTimeout(() => {
+      mmsi = randomMMSI()
+    }, 30000))
+
+    timers.push(setTimeout(() => {
+      alert = 0; 
+    }, 20000))
+    timers.push(setTimeout(() => {
+      alert = 0; 
+    }, 70000))
+
+    timers.push(setInterval(() => {
+      checkBeacons(mmsi, MOBsent);
+    }, 500))
+    
   };
 
 	
 	noble.on('stateChange', async (state) => {
 	  if (state === 'poweredOn') {
       app.debug('noble poweredOn');
-	    await noble.startScanningAsync(['180f'], false);
+	    await noble.startScanningAsync([], false);
 	  }
 	});
 	noble.on('discover', async (peripheral) => {
     app.debug('noble discover');
 	  await noble.stopScanningAsync();
 	  await peripheral.connectAsync();
-	  const {characteristics} = await peripheral.discoverSomeServicesAndCharacteristicsAsync(['180f'], ['2a19']);
-	  const batteryLevel = (await characteristics[0].readAsync())[0];
+	  // const {characteristics} = await peripheral.discoverSomeServicesAndCharacteristicsAsync(['180f'], ['2a19']);
+	  // const batteryLevel = (await characteristics[0].readAsync())[0];
 	
-	  app.debug(`${peripheral.address} (${peripheral.advertisement.localName}): ${batteryLevel}%`);
+	  // app.debug(`${peripheral.address} (${peripheral.advertisement.localName}): ${batteryLevel}%`);
+	  app.debug("%s %s: %j", peripheral.address, peripheral.advertisement.localName, util.inspect(peripheral));
 	
 	  await peripheral.disconnectAsync();
-    process.exit(0);
   });
 
+  Chipolo.discover(function(chipolo) {
+    app.debug('Found chipolo %s', chipolo.toString());
+
+    chipolo.on('disconnect', function(chipolo) {
+      app.debug('Disconnected from %{s}!', chipolo.toString());
+    });
+  });
 
   plugin.stop = function () {
     // Here we put logic we need when the plugin stops
@@ -80,77 +109,85 @@ module.exports = function (app) {
         clearInterval(timer)
       }) 
     };
-
   };
 
-function sendMOBpgn () {
-/*
-    {"Man Overboard Notification",
-     127233,
-     PACKET_COMPLETE,
-     PACKET_FAST,
-     35,
-     0,
-     {{"SID", BYTES(1), 1, false, 0, ""},
-      {"MOB Emitter ID", BYTES(4), RES_INTEGER, false, 0, "Identifier for each MOB emitter, unique to the vessel"},
-      {"Man Overboard Status",
-       3,
-       RES_LOOKUP,
-       false,
-       ",0=MOB Emitter Activated,1=Manual on-board MOB Button Activation,2=Test Mode,3=MOB Not Active",
-       ""},
-      {"Reserved1", 5, RES_BINARY, false, 0, ""},
-      {"Activation Time", BYTES(4), RES_TIME, false, "s", "Time of day (UTC) when MOB was activated"},
-      {"Position Source", 3, RES_LOOKUP, false, ",0=Position estimated by the Vessel,1=Position reported by MOB emitter", ""},
-      {"Reserved2", 5, RES_BINARY, false, 0, ""},
-      {"Position Date", BYTES(2), RES_DATE, false, "", "Date of MOB position"},
-      {"Position Time", BYTES(4), RES_TIME, false, "s", "Time of day of MOB position (UTC)"},
-      {"Latitude", BYTES(4), RES_LATITUDE, true, "deg", ""},
-      {"Longitude", BYTES(4), RES_LONGITUDE, true, "deg", ""},
-      {"COG Reference", 2, RES_LOOKUP, false, LOOKUP_DIRECTION_REFERENCE, ""},
-      {"Reserved3", 6, RES_BINARY, false, 0, ""},
-      {"COG", BYTES(2), RES_RADIANS, false, "rad", ""},
-      {"SOG", BYTES(2), 0.01, false, "m/s", ""},
-      {"MMSI of vessel of origin", BYTES(4), RES_INTEGER, false, "MMSI", ""},
-      {"MOB Emitter Battery Status", 3, RES_LOOKUP, false, ",0=Good,1=Low", ""},
-      {"Reserved4", 5, RES_BINARY, false, 0, ""},
-      {0}}}
-*/
+  function randomMMSI () {
+    const random = (Math.floor(Math.random() * 998) + 1).toString()
+    const mmsi = Number("972777" + (('000' + random).slice(-3)))
+    app.debug("Generate random MMSI: %d", mmsi)
+    return mmsi
+  }
 
-      const datetime = new Date(app.getSelfPath('navigation.datetime.value'))
-      const myPos = app.getSelfPath('navigation.position.value')
-
-      const commandPgn = {
-        "pgn":127233,
-        "dst": 255,
-        "prio":3,
-        "fields":{
-          "SID": 0,
-          "MOB Emitter ID": 0,
-          "Man Overboard Status": 2,
-          "Reserved1": 31,
-          "Activation Time": secToday(datetime)-5,
-          "Position Source": 0,
-          "Reserved2": 63,
-          "Position Date": daysToday(datetime),
-          "Position Time": secToday(datetime),
-          "Latitude": myPos.latitude + 0.0001,
-          "Longitude": myPos.longitude - 0.0001,
-          "COG Reference": 0,
-          "Reserved3": 127,
-          "COG": 0,
-          "SOG": 0,
-          "MMSI of vessel of origin": 244130146,
-          "MOB Emitter Battery Status": 0,
-          "Reserved4": 63
-        }
+  function checkBeacons (mmsi) {
+    var currentGPS = currentGPSPosition();
+    if (alert == 1) {
+      app.debug("We have an MOB! Alerting using MMSI %s MOBsent %s", mmsi, MOBsent)
+      sendMOBPositionPGN(mmsi, currentGPS)
+      if (MOBsent == false) {
+        sendMOBAlertpgn(mmsi)
+        MOBsent = true
       }
-
-      setTimeout(function(){
-        app.debug('sending command %j', commandPgn)
-        app.emit('nmea2000JsonOut', commandPgn)
-      }, 1000)
     }
+  }
+
+  function currentGPSPosition () {
+    return app.getSelfPath('navigation.position.value')
+  }
+
+  function sendMOBPositionPGN (mmsi, gpsPosition) {
+    //const datetime = new Date(app.getSelfPath('navigation.datetime.value'))
+
+    const PGN_129038 = {
+      "pgn": 129038,
+      "dst": 255,
+      "prio":3,
+      "fields":{
+        "Message ID": 0,
+        "Repeat Indicator": 0,
+        "User ID": mmsi,
+        "Latitude": gpsPosition.latitude,
+        "Longitude": gpsPosition.longitude,
+        "Position Accuracy": 0, 
+        "RAIM": 0,
+        "Time Stamp": 60,
+        "COG": 0,
+        "SOG": 0,
+        // "Communication State": ,
+        "AIS Transceiver information": 4,
+        // "Heading": 0,
+        // "Rate of Turn": 0,
+        "Nav Status": 14,
+        "Special Maneuver Indicator": 0,
+        // "AIS Spare": "",
+        "Sequence ID": 0
+      }
+    }
+
+    setTimeout(function(){
+      app.debug('sending command %j', PGN_129038)
+      app.emit('nmea2000JsonOut', PGN_129038)
+    }, 1000)
+  }
+
+  function sendMOBAlertpgn (mmsi) {
+    const PGN_129802 = {
+      "pgn": 129802,
+      "dst": 255,
+      "prio":3,
+      "fields":{
+        "Message ID": 0,
+        "Repeat Indicator": 0,
+        "Source ID": mmsi,
+        "AIS Transceiver information": 4,
+        "Safety Related Text": "MOB alert"
+      }
+    }
+
+    setTimeout(function(){
+      app.debug('sending command %j', PGN_129802)
+      app.emit('nmea2000JsonOut', PGN_129802)
+    }, 1000)
+  }
 
   plugin.schema = {
     // The plugin schema
@@ -176,7 +213,6 @@ function sendMOBpgn () {
       },
     }
   };
-
   return plugin;
 };
 
